@@ -1578,9 +1578,13 @@ def main():
             st.session_state[k] = v
 
     # 🚨 STOP app until session state is ready (Railway-safe)
-    if st.session_state.selected_lat is None or st.session_state.selected_lon is None:
+    lat = st.session_state.get("selected_lat")
+    lon = st.session_state.get("selected_lon")
+
+    if lat is None or lon is None:
         st.info("📍 Please select a location to begin")
         return
+
 
 
     
@@ -1628,11 +1632,11 @@ def main():
         }
 
         if "selected_lat" not in st.session_state:
-            st.session_state.selected_lat, st.session_state.selected_lon = default_coords[city_selection]
+            st.session_state["selected_lat"], st.session_state["selected_lon"] = default_coords[city_selection]
 
         # Step 3: Use latest session coordinates
-        center_lat = st.session_state.selected_lat
-        center_lon = st.session_state.selected_lon
+        center_lat = st.session_state.get("selected_lat")
+        center_lon = st.session_state.get("selected_lon")
 
         # # Step 4: Create selection map centered on latest point
         # selection_map = create_selection_map(
@@ -1852,7 +1856,7 @@ def main():
                 analysis_results = analyze_rectangular_boundary_complete(
                     datasets,
                     st.session_state.selected_lat,
-                    st.session_state.selected_lon,
+                    st.session_state.get("selected_lon"),
                     st.session_state.boundary_width_km,
                     st.session_state.boundary_height_km
                 )
@@ -1866,8 +1870,8 @@ def main():
 
         # 🔁 Reset button
         if st.button("🔄 Reset", use_container_width=True):
-            st.session_state.selected_lat = 12.9716
-            st.session_state.selected_lon = 77.5946
+            st.session_state["selected_lat"] = 12.9716
+            st.session_state["selected_lon"] = 77.5946
             st.session_state.analysis_results = None
             st.session_state.map_key += 1
             st.success("✅ Reset to default location")
