@@ -7,13 +7,15 @@ from streamlit_folium import st_folium
 from folium.plugins import HeatMap
 import plotly.express as px
 import plotly.graph_objects as go
-from geopy.distance import geodesic
+# from geopy.distance import geodesic
 from shapely.geometry import Point, Polygon
-import geopandas as gpd
-from scipy.spatial.distance import cdist
+# import geopandas as gpd
+# from scipy.spatial.distance import cdist
 import json
 from io import StringIO
 import joblib
+import os
+IS_HF = os.getenv("SPACE_ID") is not None
 
 
 # Page Configuration
@@ -372,22 +374,25 @@ def load_all_datasets():
         # ==============================================================
         # 6️⃣ GEOCODE SERVICEABLE PINCODES
         # ==============================================================
-        from geopy.geocoders import Nominatim
-        geolocator = Nominatim(user_agent="h_and_g_geocoder")
+        # from geopy.geocoders import Nominatim
+        # geolocator = Nominatim(user_agent="h_and_g_geocoder")
 
-        @st.cache_data(show_spinner=False)
-        def geocode_pin(pin):
-            try:
-                if pd.isna(pin): 
-                    return None, None
-                loc = geolocator.geocode(f"{pin}, India")
-                return (loc.latitude, loc.longitude) if loc else (None, None)
-            except:
-                return None, None
+        # @st.cache_data(show_spinner=False)
+        # def geocode_pin(pin):
+        #     try:
+        #         if pd.isna(pin): 
+        #             return None, None
+        #         loc = geolocator.geocode(f"{pin}, India")
+        #         return (loc.latitude, loc.longitude) if loc else (None, None)
+        #     except:
+        #         return None, None
 
-        df_pins["Serv_Lat"], df_pins["Serv_Lng"] = zip(
-            *df_pins["ServiceablePinCode"].apply(geocode_pin)
-        )
+        # df_pins["Serv_Lat"], df_pins["Serv_Lng"] = zip(
+        #     *df_pins["ServiceablePinCode"].apply(geocode_pin)
+        df_pins["Serv_Lat"] = None
+        df_pins["Serv_Lng"] = None
+
+        
 
         # ==============================================================
         # 7️⃣ VALIDATE SERVICEABLE PIN LAT/LONG (remove outliers)
@@ -497,12 +502,12 @@ def standardize_healthglow_data(datasets):
     return standardized_data
 
 
-datasets = load_all_datasets()
-if datasets:
-    healthglow_data = standardize_healthglow_data(datasets)
-    housing_data = combine_housing_data(datasets)
-    st.session_state['all_housing_data'] = housing_data
-    st.session_state['all_healthglow_data'] = healthglow_data
+# datasets = load_all_datasets()
+# if datasets:
+#     healthglow_data = standardize_healthglow_data(datasets)
+#     housing_data = combine_housing_data(datasets)
+#     st.session_state['all_housing_data'] = housing_data
+#     st.session_state['all_healthglow_data'] = healthglow_data
 
     # You can now use healthglow_data for your analysis
 
@@ -514,21 +519,21 @@ if datasets:
 
 # datasets['healthglow_hyd_che'] = datasets['healthglow']
 
-@st.cache_resource
-def load_prediction_assets():
-    return joblib.load("retail_store_prediction_assets.pkl")
+# @st.cache_resource
+# def load_prediction_assets():
+#     return joblib.load("retail_store_prediction_assets.pkl")
 
-try:
-    assets = load_prediction_assets()
-    stacking_model = assets['model']
-    scaler = assets['scaler']
-    nn_model = assets['nn_model']
-    city_mapping = assets['city_mapping']
-    X_similarity_columns = assets['X_similarity_columns']
-    model_feature_columns = assets['model_feature_columns']
-    df_similarity = assets['df']
-except Exception as e:
-    assets = None
+# try:
+#     assets = load_prediction_assets()
+#     stacking_model = assets['model']
+#     scaler = assets['scaler']
+#     nn_model = assets['nn_model']
+#     city_mapping = assets['city_mapping']
+#     X_similarity_columns = assets['X_similarity_columns']
+#     model_feature_columns = assets['model_feature_columns']
+#     df_similarity = assets['df']
+# except Exception as e:
+#     assets = None
     # st.sidebar.error("⚠️ Could not load prediction model assets: " + str(e))
 
 city_ranking = {
@@ -548,101 +553,87 @@ similarity_features = [
 ]
 cols_to_standardize = ['Store carpet area', 'store trading area', 'Compititors']
 
-def predict_sales_for_new_store(new_store_features, profit_threshold=500000):
-    # City mapping
-    new_store_features['City Name'] = city_mapping.get(
-        new_store_features.get('City Name'), new_store_features.get('City Name')
-    )
-    # Rankings
-    new_store_features['City Rank'] = city_ranking.get(
-        new_store_features.get('City Name'), 0
-    )
-    new_store_features['Visibility Score'] = visibility_ranking.get(
-        new_store_features.get('Visibility Score'), 1
-    )
-    # One-hot encode to match training
-    new_store_encoded = pd.get_dummies(pd.DataFrame([new_store_features])[similarity_features])
-    # Align columns
-    missing_cols = set(X_similarity_columns) - set(new_store_encoded.columns)
-    for col in missing_cols:
-        new_store_encoded[col] = 0
-    new_store_encoded = new_store_encoded.reindex(columns=X_similarity_columns, fill_value=0)
-    # Find most similar store
-    distances, indices = nn_model.kneighbors(new_store_encoded)
-    closest_store_index = indices[0][0]
-    closest_store = df_similarity.iloc[closest_store_index]
-    # Use proxy values if needed
-    proxy_values = {
-        'FY25NO_OF_DATE': closest_store.get('FY25NO_OF_DATE', 0),
-        'FY25SAL_QTY': closest_store.get('FY25SAL_QTY', 0)
-    }
-    new_store_features.update(proxy_values)
-    # Prepare for model: one-hot encode and align columns
-    new_store_input = pd.DataFrame([new_store_features])
-    new_store_input = pd.get_dummies(new_store_input)
-    missing_pred_cols = set(model_feature_columns) - set(new_store_input.columns)
-    for col in missing_pred_cols:
-        new_store_input[col] = 0
-    new_store_input = new_store_input[model_feature_columns]
-    new_store_input[cols_to_standardize] = scaler.transform(new_store_input[cols_to_standardize])
-    # Predict
-    predicted_sales = stacking_model.predict(new_store_input)[0]
-    is_profitable = predicted_sales > profit_threshold
-    return {
-        'predicted_sales': predicted_sales,
-        'matched_store_city': closest_store['City Name'],
-        'is_profitable': is_profitable
-    }
+# def predict_sales_for_new_store(new_store_features, profit_threshold=500000):
+#     # City mapping
+#     new_store_features['City Name'] = city_mapping.get(
+#         new_store_features.get('City Name'), new_store_features.get('City Name')
+#     )
+#     # Rankings
+#     new_store_features['City Rank'] = city_ranking.get(
+#         new_store_features.get('City Name'), 0
+#     )
+#     new_store_features['Visibility Score'] = visibility_ranking.get(
+#         new_store_features.get('Visibility Score'), 1
+#     )
+#     # One-hot encode to match training
+#     new_store_encoded = pd.get_dummies(pd.DataFrame([new_store_features])[similarity_features])
+#     # Align columns
+#     missing_cols = set(X_similarity_columns) - set(new_store_encoded.columns)
+#     for col in missing_cols:
+#         new_store_encoded[col] = 0
+#     new_store_encoded = new_store_encoded.reindex(columns=X_similarity_columns, fill_value=0)
+#     # Find most similar store
+#     distances, indices = nn_model.kneighbors(new_store_encoded)
+#     closest_store_index = indices[0][0]
+#     closest_store = df_similarity.iloc[closest_store_index]
+#     # Use proxy values if needed
+#     proxy_values = {
+#         'FY25NO_OF_DATE': closest_store.get('FY25NO_OF_DATE', 0),
+#         'FY25SAL_QTY': closest_store.get('FY25SAL_QTY', 0)
+#     }
+#     new_store_features.update(proxy_values)
+#     # Prepare for model: one-hot encode and align columns
+#     new_store_input = pd.DataFrame([new_store_features])
+#     new_store_input = pd.get_dummies(new_store_input)
+#     missing_pred_cols = set(model_feature_columns) - set(new_store_input.columns)
+#     for col in missing_pred_cols:
+#         new_store_input[col] = 0
+#     new_store_input = new_store_input[model_feature_columns]
+#     new_store_input[cols_to_standardize] = scaler.transform(new_store_input[cols_to_standardize])
+#     # Predict
+#     predicted_sales = stacking_model.predict(new_store_input)[0]
+#     is_profitable = predicted_sales > profit_threshold
+#     return {
+#         'predicted_sales': predicted_sales,
+#         'matched_store_city': closest_store['City Name'],
+#         'is_profitable': is_profitable
+#     }
 
 def create_rectangular_grid(center_lat, center_lon, width_km, height_km):
-    """Create rectangular grid cells within the boundary"""
-    
     lat_per_km = 1.0 / 111.0
     lon_per_km = 1.0 / (111.0 * np.cos(np.radians(center_lat)))
-    
-    lat_offset = height_km * lat_per_km / 2
-    lon_offset = width_km * lon_per_km / 2
-    
-    min_lat = center_lat - lat_offset
-    max_lat = center_lat + lat_offset
-    min_lon = center_lon - lon_offset
-    max_lon = center_lon + lon_offset
-    
-    grid_cells = []
+
     cell_size_lat = lat_per_km
     cell_size_lon = lon_per_km
-    
-    lat = min_lat
+
+    rows = int(round(height_km))
+    cols = int(round(width_km))
+
+    start_lat = center_lat - (rows / 2) * cell_size_lat
+    start_lon = center_lon - (cols / 2) * cell_size_lon
+
+    grid_cells = []
     cell_id = 0
-    
-    while lat < max_lat:
-        lon = min_lon
-        while lon < max_lon:
-            cell_coords = [
-                [lat, lon],
-                [lat, lon + cell_size_lon],
-                [lat + cell_size_lat, lon + cell_size_lon],
-                [lat + cell_size_lat, lon],
-                [lat, lon]
-            ]
-            
+
+    for r in range(rows):
+        for c in range(cols):
+            min_lat = start_lat + r * cell_size_lat
+            min_lon = start_lon + c * cell_size_lon
+
             grid_cells.append({
-                'id': cell_id,
-                'center_lat': lat + cell_size_lat/2,
-                'center_lon': lon + cell_size_lon/2,
-                'coordinates': cell_coords,
-                'min_lat': lat,
-                'max_lat': lat + cell_size_lat,
-                'min_lon': lon,
-                'max_lon': lon + cell_size_lon
+                "id": cell_id,
+                "center_lat": min_lat + cell_size_lat / 2,
+                "center_lon": min_lon + cell_size_lon / 2,
+                "min_lat": min_lat,
+                "max_lat": min_lat + cell_size_lat,
+                "min_lon": min_lon,
+                "max_lon": min_lon + cell_size_lon,
             })
-            
+
             cell_id += 1
-            lon += cell_size_lon
-        
-        lat += cell_size_lat
-    
+
     return grid_cells
+
 
 def analyze_rectangular_boundary_complete(datasets, center_lat, center_lon, width_km, height_km):
     """Complete analysis with rectangular boundary"""
@@ -952,7 +943,7 @@ def create_selection_map(center_lat, center_lon, width_km, height_km, city_selec
     folium.LayerControl().add_to(m)
     return m
 
-def create_analysis_map(analysis_results):
+def create_analysis_map(analysis_results, datasets):
     """Create map with analysis results"""
     
     boundary_info = analysis_results['boundary_info']
@@ -973,73 +964,73 @@ def create_analysis_map(analysis_results):
         # ===========================
     # HYPERLOCAL PIN CODE LAYER
     # ===========================
-    if "pin_mapping" in datasets:
-        df_pins = datasets["pin_mapping"]
-        hyperlocal_layer = folium.FeatureGroup(name="Store & Serviceable Pin Codes")
+    # if "pin_mapping" in datasets:
+    #     df_pins = datasets["pin_mapping"]
+    #     hyperlocal_layer = folium.FeatureGroup(name="Store & Serviceable Pin Codes")
 
-        # Group by each store location code
-        grouped = df_pins.groupby("StoreLocationPinCode")
+    #     # Group by each store location code
+    #     grouped = df_pins.groupby("StoreLocationPinCode")
 
-        for store_pin, group in grouped:
-            store_lat = group["Store_Lat"].iloc[0]
-            store_lon = group["Store_Lng"].iloc[0]
+    #     for store_pin, group in grouped:
+    #         store_lat = group["Store_Lat"].iloc[0]
+    #         store_lon = group["Store_Lng"].iloc[0]
 
-            if pd.isna(store_lat) or pd.isna(store_lon):
-                continue
+    #         if pd.isna(store_lat) or pd.isna(store_lon):
+    #             continue
 
-            # 1️⃣ BLUE marker for store
-            folium.CircleMarker(
-                location=[store_lat, store_lon],
-                radius=7,
-                color="blue",
-                fill=True,
-                fill_color="blue",
-                popup=f"Store {store_pin}"
-            ).add_to(hyperlocal_layer)
+    #         # 1️⃣ BLUE marker for store
+    #         folium.CircleMarker(
+    #             location=[store_lat, store_lon],
+    #             radius=7,
+    #             color="blue",
+    #             fill=True,
+    #             fill_color="blue",
+    #             popup=f"Store {store_pin}"
+    #         ).add_to(hyperlocal_layer)
 
-            polygon_points = []
+    #         polygon_points = []
 
-            # Loop through serviceable pins belonging only to THIS store
-            for _, row in group.iterrows():
-                serv_lat = row["Serv_Lat"]
-                serv_lon = row["Serv_Lng"]
-                service_pin = row["ServiceablePinCode"]
+    #         # Loop through serviceable pins belonging only to THIS store
+    #         for _, row in group.iterrows():
+    #             serv_lat = row["Serv_Lat"]
+    #             serv_lon = row["Serv_Lng"]
+    #             service_pin = row["ServiceablePinCode"]
 
-                if pd.isna(serv_lat) or pd.isna(serv_lon):
-                    continue
+    #             if pd.isna(serv_lat) or pd.isna(serv_lon):
+    #                 continue
 
-                # 2️⃣ ORANGE marker — serviceable
-                folium.CircleMarker(
-                    location=[serv_lat, serv_lon],
-                    radius=4,
-                    color="orange",
-                    fill=True,
-                    fill_color="orange",
-                    popup=f"Serviceable Pin: {service_pin}"
-                ).add_to(hyperlocal_layer)
+    #             # 2️⃣ ORANGE marker — serviceable
+    #             folium.CircleMarker(
+    #                 location=[serv_lat, serv_lon],
+    #                 radius=4,
+    #                 color="orange",
+    #                 fill=True,
+    #                 fill_color="orange",
+    #                 popup=f"Serviceable Pin: {service_pin}"
+    #             ).add_to(hyperlocal_layer)
 
-                # 3️⃣ Line connecting this store → this service pin
-                folium.PolyLine(
-                    locations=[[store_lat, store_lon], [serv_lat, serv_lon]],
-                    color="black",
-                    weight=2,
-                    dash_array="5,5",
-                ).add_to(hyperlocal_layer)
+    #             # 3️⃣ Line connecting this store → this service pin
+    #             folium.PolyLine(
+    #                 locations=[[store_lat, store_lon], [serv_lat, serv_lon]],
+    #                 color="black",
+    #                 weight=2,
+    #                 dash_array="5,5",
+    #             ).add_to(hyperlocal_layer)
 
-                polygon_points.append([serv_lat, serv_lon])
+    #             polygon_points.append([serv_lat, serv_lon])
 
-            # 4️⃣ Polygon ONLY around this store's serviceable pins
-            if len(polygon_points) >= 3:
-                folium.Polygon(
-                    locations=polygon_points,
-                    color="orange",
-                    fill=True,
-                    fill_opacity=0.15,
-                    weight=2,
-                    dash_array="5,5"
-                ).add_to(hyperlocal_layer)
+    #         # 4️⃣ Polygon ONLY around this store's serviceable pins
+    #         if len(polygon_points) >= 3:
+    #             folium.Polygon(
+    #                 locations=polygon_points,
+    #                 color="orange",
+    #                 fill=True,
+    #                 fill_opacity=0.15,
+    #                 weight=2,
+    #                 dash_array="5,5"
+    #             ).add_to(hyperlocal_layer)
 
-        hyperlocal_layer.add_to(m)
+    #     hyperlocal_layer.add_to(m)
 
     # ===========================
     # END HYPERLOCAL LAYER
@@ -1154,7 +1145,8 @@ def create_analysis_map(analysis_results):
     return m
 
 
-def display_analysis_results(analysis_results):
+def display_analysis_results(analysis_results, datasets):
+
     """Display comprehensive analysis results with professional UI"""
     
     complete_grid = analysis_results['complete_grid']
@@ -1248,7 +1240,8 @@ def display_analysis_results(analysis_results):
         st.markdown("### 🗺️ Investment Opportunity Heatmap")
         
         # Create and display analysis map
-        analysis_map = create_analysis_map(analysis_results)
+        analysis_map = create_analysis_map(analysis_results, st.session_state.datasets)
+
         
         st.markdown('<div class="map-container">', unsafe_allow_html=True)
         st_folium(analysis_map, width=700, height=600, returned_objects=[])
@@ -1576,12 +1569,16 @@ def main():
     ''', unsafe_allow_html=True)
     
     # Load datasets
-    with st.spinner("🔄 Loading datasets..."):
-        datasets = load_all_datasets()
+    # if "datasets" not in st.session_state:
+    #     with st.spinner("🔄 Loading datasets (first time)..."):
+    #         st.session_state.datasets = load_all_datasets()
+
+    # datasets = st.session_state.datasets
+
     
-    if not datasets:
-        st.error("❌ Failed to load required datasets. Please check file availability.")
-        return
+    # if not datasets:
+    #     st.error("❌ Failed to load required datasets. Please check file availability.")
+    #     return
     
     st.session_state.datasets_loaded = True
     
@@ -1613,39 +1610,39 @@ def main():
         center_lat = st.session_state.selected_lat
         center_lon = st.session_state.selected_lon
 
-        # Step 4: Create selection map centered on latest point
-        selection_map = create_selection_map(
-            center_lat,
-            center_lon,
-            st.session_state.boundary_width_km,
-            st.session_state.boundary_height_km,
-            city_selection
-        )
+        # # Step 4: Create selection map centered on latest point
+        # selection_map = create_selection_map(
+        #     center_lat,
+        #     center_lon,
+        #     st.session_state.boundary_width_km,
+        #     st.session_state.boundary_height_km,
+        #     city_selection
+        # )
 
-        # Step 5: Display map
-        st.markdown('<div class="map-container">', unsafe_allow_html=True)
-        map_data = st_folium(
-            selection_map,
-            width=700,
-            height=500,
-            returned_objects=["last_clicked"],
-            key=f"location_map_{st.session_state.map_key}"
-        )
-        st.markdown('</div>', unsafe_allow_html=True)
+        # # Step 5: Display map
+        # st.markdown('<div class="map-container">', unsafe_allow_html=True)
+        # map_data = st_folium(
+        #     selection_map,
+        #     width=700,
+        #     height=500,
+        #     returned_objects=["last_clicked"],
+        #     key=f"location_map_{st.session_state.map_key}"
+        # )
+        # st.markdown('</div>', unsafe_allow_html=True)
 
-        # Step 6: When user clicks anywhere on map
-        if map_data and map_data.get("last_clicked"):
-            clicked_lat = map_data["last_clicked"]["lat"]
-            clicked_lon = map_data["last_clicked"]["lng"]
+        # # Step 6: When user clicks anywhere on map
+        # if map_data and map_data.get("last_clicked"):
+        #     clicked_lat = map_data["last_clicked"]["lat"]
+        #     clicked_lon = map_data["last_clicked"]["lng"]
 
-            # Always update coordinates to clicked point
-            st.session_state.selected_lat = clicked_lat
-            st.session_state.selected_lon = clicked_lon
-            st.session_state.analysis_results = None
-            st.session_state.map_key += 1
+        #     # Always update coordinates to clicked point
+        #     st.session_state.selected_lat = clicked_lat
+        #     st.session_state.selected_lon = clicked_lon
+        #     st.session_state.analysis_results = None
+        #     st.session_state.map_key += 1
 
-            st.success(f"✅ Selected new location: {clicked_lat:.6f}, {clicked_lon:.6f}")
-            st.rerun()
+        #     st.success(f"✅ Selected new location: {clicked_lat:.6f}, {clicked_lon:.6f}")
+        #     st.rerun()
         
         # Quick location selector (city-aware) with persistent state
         st.markdown("## 🏙️ Popular Areas")
@@ -1816,6 +1813,13 @@ def main():
 
         # 🚀 Start analysis button
         if st.button("🚀 START ANALYSIS", type="primary", use_container_width=True):
+            # ✅ LAZY LOAD DATASETS HERE (only when button is clicked)
+            if "datasets" not in st.session_state:
+                with st.spinner("🔄 Loading datasets (first time)..."):
+                    st.session_state.datasets = load_all_datasets()
+
+            datasets = st.session_state.datasets
+        
             with st.spinner("🔄 Analyzing selected area..."):
                 analysis_results = analyze_rectangular_boundary_complete(
                     datasets,
@@ -1859,7 +1863,11 @@ def main():
     # Display analysis results if available
     if st.session_state.analysis_results:
         st.markdown("---")
-        display_analysis_results(st.session_state.analysis_results)
+        display_analysis_results(
+    st.session_state.analysis_results,
+    st.session_state.datasets
+)
+
 
     # Footer
     st.markdown("---")
