@@ -1560,6 +1560,7 @@ def export_detailed_grid_data(analysis_results):
 
 def main():
     """Main application function with working map click functionality"""
+
     # ✅ GUARANTEED session init (Railway-safe)
     defaults = {
         "selected_lat": 12.9716,
@@ -1575,6 +1576,14 @@ def main():
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+
+    # 🚨 STOP app until session state is ready (Railway-safe)
+    if st.session_state.selected_lat is None or st.session_state.selected_lon is None:
+        st.info("📍 Please select a location to begin")
+        return
+
+
+    
     # Header
     st.markdown('''
     <div class="main-header">
@@ -1819,9 +1828,9 @@ def main():
                 st.divider()
 
     # Always visible buttons
-                st.button("🚀 START ANALYSIS", use_container_width=True)
-                st.button("🔄 Reset", use_container_width=True)
-                st.button("📍 Go to Selected Area", use_container_width=True)
+                # st.button("🚀 START ANALYSIS", use_container_width=True)
+                # st.button("🔄 Reset", use_container_width=True)
+                # st.button("📍 Go to Selected Area", use_container_width=True)
 
 
         
@@ -1829,9 +1838,13 @@ def main():
         # 🚀 Start analysis button
         if st.button("🚀 START ANALYSIS", type="primary", use_container_width=True):
             # ✅ LAZY LOAD DATASETS HERE (only when button is clicked)
-            if "datasets" not in st.session_state:
+            if "datasets" not in st.session_state or st.session_state.datasets is None:
                 with st.spinner("🔄 Loading datasets (first time)..."):
                     st.session_state.datasets = load_all_datasets()
+                    
+            if st.session_state.datasets is None:
+                st.error("❌ Datasets failed to load. Check data files.")
+                st.stop()
 
             datasets = st.session_state.datasets
         
