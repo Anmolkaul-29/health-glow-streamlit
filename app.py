@@ -288,24 +288,24 @@ def is_within_bounds(lat, lon, city):
     return False
 
 # Initialize Session State
-def initialize_session_state():
-    """Initialize all session state variables"""
-    default_values = {
-        'selected_lat': 12.9716,
-        'selected_lon': 77.5946,
-        'boundary_width_km': 6,
-        'boundary_height_km': 6,
-        'analysis_results': None,
-        'datasets_loaded': False,
-        'map_key': 0,  # This will help with map rerendering
-        'city_selection': 'Bangalore'
-    }
+# def initialize_session_state():
+#     """Initialize all session state variables"""
+#     default_values = {
+#         'selected_lat': 12.9716,
+#         'selected_lon': 77.5946,
+#         'boundary_width_km': 6,
+#         'boundary_height_km': 6,
+#         'analysis_results': None,
+#         'datasets_loaded': False,
+#         'map_key': 0,  # This will help with map rerendering
+#         'city_selection': 'Bangalore'
+#     }
     
-    for key, value in default_values.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
+#     for key, value in default_values.items():
+#         if key not in st.session_state:
+#             st.session_state[key] = value
 
-initialize_session_state()
+# initialize_session_state()
 
 @st.cache_data
 def load_all_datasets():
@@ -1240,7 +1240,8 @@ def display_analysis_results(analysis_results, datasets):
         st.markdown("### 🗺️ Investment Opportunity Heatmap")
         
         # Create and display analysis map
-        analysis_map = create_analysis_map(analysis_results, st.session_state.datasets)
+        analysis_map = create_analysis_map(analysis_results, datasets)
+
 
         
         st.markdown('<div class="map-container">', unsafe_allow_html=True)
@@ -1559,7 +1560,21 @@ def export_detailed_grid_data(analysis_results):
 
 def main():
     """Main application function with working map click functionality"""
-    
+    # ✅ GUARANTEED session init (Railway-safe)
+    defaults = {
+        "selected_lat": 12.9716,
+        "selected_lon": 77.5946,
+        "boundary_width_km": 6,
+        "boundary_height_km": 6,
+        "analysis_results": None,
+        "datasets_loaded": False,
+        "map_key": 0,
+        "city_selection": "Bangalore",
+    }
+
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
     # Header
     st.markdown('''
     <div class="main-header">
@@ -1863,10 +1878,14 @@ def main():
     # Display analysis results if available
     if st.session_state.analysis_results:
         st.markdown("---")
-        display_analysis_results(
-    st.session_state.analysis_results,
-    st.session_state.datasets
-)
+        if "datasets" in st.session_state:
+            display_analysis_results(
+                st.session_state.analysis_results,
+                st.session_state.datasets
+    )
+        else:
+            st.error("❌ Datasets not loaded. Please re-run analysis.")
+
 
 
     # Footer
