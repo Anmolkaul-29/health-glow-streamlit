@@ -14,7 +14,7 @@ def load_users():
 USERS = load_users()
 
 # 🔧 LOCAL FALLBACK (ONLY if ENV is missing)
-st.warning("⚠️ AUTH_USERS environment variable not set.")
+# st.warning("⚠️ AUTH_USERS environment variable not set.")
 
 
 def check_password(username, password):
