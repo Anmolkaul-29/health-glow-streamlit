@@ -1755,8 +1755,6 @@ def main():
         st.session_state.boundary_width_km = width_km
         st.session_state.boundary_height_km = height_km
 
-        logout_button()
-
         # Current selection display
         st.markdown("## 📊 Current Selection")
         st.markdown(f'''
@@ -1766,6 +1764,9 @@ def main():
         <strong>Total:</strong> {width_km * height_km} km²
         </div>
         ''', unsafe_allow_html=True)
+
+        st.divider()
+        logout_button()
 
          
 
