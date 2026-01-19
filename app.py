@@ -1,5 +1,6 @@
 import os
 import streamlit as st
+from auth import login_ui, logout_button
 import pandas as pd
 import numpy as np
 import folium
@@ -16,6 +17,14 @@ from io import StringIO
 import joblib
 import os
 IS_HF = os.getenv("SPACE_ID") is not None
+
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if not st.session_state["authenticated"]:
+    login_ui()
+    st.stop()   # ⛔ stops app until login
+
 
 
 # Page Configuration
@@ -1745,7 +1754,9 @@ def main():
         
         st.session_state.boundary_width_km = width_km
         st.session_state.boundary_height_km = height_km
-        
+
+        logout_button()
+
         # Current selection display
         st.markdown("## 📊 Current Selection")
         st.markdown(f'''
@@ -1755,6 +1766,8 @@ def main():
         <strong>Total:</strong> {width_km * height_km} km²
         </div>
         ''', unsafe_allow_html=True)
+
+         
 
     # Create and display map for location selection
     col1, col2 = st.columns([4, 1])
@@ -1920,4 +1933,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
